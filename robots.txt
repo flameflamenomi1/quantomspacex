@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Allow: /markets
+Allow: /insights
+Disallow: /dashboard
+Disallow: /settings
+Disallow: /admin
+Disallow: /login
+
+Sitemap: https://quantumspacex.wegic.net/sitemap.xml
