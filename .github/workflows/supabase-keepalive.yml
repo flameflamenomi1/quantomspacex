@@ -1,0 +1,69 @@
+name: Supabase Keep-Alive
+
+# Runs a lightweight authenticated request against the Supabase REST API every
+# 6 hours. Supabase free-tier projects auto-pause after ~7 days of inactivity,
+# so this is more than sufficient to keep the project awake. It can also be
+# triggered manually from the Actions tab.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours, on the hour
+  workflow_dispatch:
+
+# Do not fail the whole repo's status if a single ping fails — we still want
+# the run to be visible in the Actions log, but we exit 0 either way.
+jobs:
+  ping:
+    name: Ping Supabase REST API
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Ping /rest/v1/ with anon key
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set +e   # do not abort on non-zero — we log and swallow failures
+
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::warning::SUPABASE_URL or SUPABASE_ANON_KEY secret is not set."
+            echo "Add them under: Repo → Settings → Secrets and variables → Actions."
+            exit 0
+          fi
+
+          # Normalize URL (strip trailing slash)
+          BASE_URL="${SUPABASE_URL%/}"
+
+          echo "→ Pinging investment_plans (limit 1) at $BASE_URL"
+          HTTP_CODE=$(curl -sS -o /tmp/body.txt -w "%{http_code}" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            "$BASE_URL/rest/v1/investment_plans?select=id&limit=1")
+
+          echo "HTTP $HTTP_CODE"
+          echo "--- Response body ---"
+          cat /tmp/body.txt || true
+          echo
+          echo "--------------------"
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Supabase keep-alive ping succeeded."
+          else
+            # Try the REST root as a fallback — even a 401 from /rest/v1/ counts as "project is awake".
+            echo "→ Primary ping non-2xx; trying /rest/v1/ root as fallback"
+            FALLBACK_CODE=$(curl -sS -o /tmp/body2.txt -w "%{http_code}" \
+              -H "apikey: $SUPABASE_ANON_KEY" \
+              "$BASE_URL/rest/v1/")
+            echo "Fallback HTTP $FALLBACK_CODE"
+            cat /tmp/body2.txt || true
+            echo
+
+            if [ "$FALLBACK_CODE" -ge 200 ] && [ "$FALLBACK_CODE" -lt 500 ]; then
+              echo "✅ Supabase project is reachable (fallback returned $FALLBACK_CODE)."
+            else
+              echo "::warning::Supabase keep-alive ping failed (primary=$HTTP_CODE fallback=$FALLBACK_CODE). Not failing the workflow."
+            fi
+          fi
+
+          exit 0
