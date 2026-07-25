@@ -117,7 +117,7 @@ export default function Footer() {
               </li>
               <li>
                 <a 
-                  href="mailto:quantumelontrades61@gmail.com?subject=Support Request - Quantumspacex"
+                  href="mailto:support@quantumspacex.com?subject=Support Request - Quantumspacex"
                   className="text-sm text-brand-textMuted hover:text-white transition-colors flex items-center gap-2"
                 >
                   <Mail className="w-3.5 h-3.5" />

@@ -236,13 +236,13 @@ export default function Navbar() {
                     </div>
                   </button>
                   <a
-                    href="mailto:quantumelontrades61@gmail.com?subject=Support Request - Quantumspacex"
+                    href="mailto:support@quantumspacex.com?subject=Support Request - Quantumspacex"
                     className="flex items-center gap-3 px-3 py-3 rounded-xl transition-colors text-brand-textMuted hover:text-white hover:bg-brand-card/50"
                   >
                     <Mail className="w-5 h-5 text-blue-400" />
                     <div className="text-left">
                       <span className="text-sm font-medium block">Email Support</span>
-                      <span className="text-[10px] text-brand-textMuted">quantumelontrades61@gmail.com</span>
+                      <span className="text-[10px] text-brand-textMuted">support@quantumspacex.com</span>
                     </div>
                   </a>
                 </div>

@@ -1,6 +1,6 @@
 import { Mail } from 'lucide-react';
 
-const SUPPORT_EMAIL = 'quantumelontrades61@gmail.com';
+const SUPPORT_EMAIL = 'support@quantumspacex.com';
 
 export default function EmailSupportButton() {
   return (
