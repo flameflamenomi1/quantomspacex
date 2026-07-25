@@ -185,11 +185,46 @@ export async function getDeposits(userId?: string) {
 }
 
 export async function updateDepositStatus(id: string, status: DepositStatus, admin_note?: string) {
+  // Fetch current deposit first so we know the amount/user before mutating status
+  const { data: depositRow, error: fetchError } = await supabase
+    .from('deposits')
+    .select('id, user_id, amount, status')
+    .eq('id', id)
+    .single();
+  if (fetchError) throw fetchError;
+
   const { error } = await supabase
     .from('deposits')
     .update({ status, admin_note, updated_at: new Date().toISOString() })
     .eq('id', id);
   if (error) throw error;
+
+  // Credit the user's balance the first time a deposit transitions into 'approved'
+  // (guarded so re-approving an already-approved deposit doesn't double-credit)
+  if (status === 'approved' && depositRow.status !== 'approved') {
+    const { data: u, error: userFetchError } = await supabase
+      .from('users')
+      .select('balance')
+      .eq('id', depositRow.user_id)
+      .single();
+    if (userFetchError) throw userFetchError;
+
+    const newBalance = (u.balance || 0) + depositRow.amount;
+    const { error: balanceUpdateError } = await supabase
+      .from('users')
+      .update({ balance: newBalance })
+      .eq('id', depositRow.user_id);
+    if (balanceUpdateError) throw balanceUpdateError;
+
+    const { error: historyError } = await supabase.from('balance_history').insert({
+      user_id: depositRow.user_id,
+      balance: newBalance,
+      change_amount: depositRow.amount,
+      change_type: 'deposit',
+      description: `Deposit approved: +$${depositRow.amount.toLocaleString()}`,
+    });
+    if (historyError) throw historyError;
+  }
 
   // Send email alert when deposit is approved or rejected
   if (status === 'approved' || status === 'rejected') {
