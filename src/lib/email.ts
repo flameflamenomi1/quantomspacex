@@ -6,9 +6,9 @@
 // 4. Replace the placeholder values below with your real credentials
 // ─────────────────────────────────────────────────────────────────────────────
 
-const EMAILJS_SERVICE_ID = 'service_u8nns7i';
-const EMAILJS_TEMPLATE_ID = 'template_5qv9uzo';
-const EMAILJS_PUBLIC_KEY = 'FUPQG4pDp8EBnJ8ZG';
+const EMAILJS_SERVICE_ID = 'service_5vt0zkk';
+const EMAILJS_TEMPLATE_ID = 'template_ow08gvt';
+const EMAILJS_PUBLIC_KEY = '0GLjbrJQKnyOu3F0C';
 
 const EMAIL_CONFIGURED =
   EMAILJS_SERVICE_ID.length > 0 &&
