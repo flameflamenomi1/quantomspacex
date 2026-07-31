@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -14,7 +14,7 @@ import {
   XCircle,
   BadgeCheck,
 } from 'lucide-react';
-import { submitKyc } from '@/lib/db';
+import { submitKyc, getLatestKycSubmission } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import type { KycStatus } from '@/lib/db';
@@ -121,12 +121,64 @@ function StatusCard({ status }: { status: KycStatus }) {
 export default function KYCPage() {
   const navigate = useNavigate();
   const { user, refreshUser } = useAuth();
-  const kycStatus: KycStatus = user?.kyc_status ?? 'unverified';
+
+  // The KYC status shown to the user must reflect the LATEST submission row,
+  // not just the cached `users.kyc_status` (which can be stale in
+  // localStorage after a resubmit, or if the admin actioned an old row). We
+  // start from the cached value for instant paint, then reconcile against the
+  // freshest kyc_submissions row on mount and after every submit.
+  const [kycStatus, setKycStatus] = useState<KycStatus>(user?.kyc_status ?? 'unverified');
 
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
+
+  // Reconcile local state with what's actually in the DB. If the user has any
+  // submission on file, the *latest* one is the source of truth for their
+  // real status; users.kyc_status is only the fallback for a user who has
+  // never submitted.
+  const reconcileStatus = async () => {
+    if (!user) return;
+    try {
+      const latest = await getLatestKycSubmission(user.id);
+      if (latest) {
+        setKycStatus(latest.status as KycStatus);
+      } else {
+        setKycStatus(user.kyc_status ?? 'unverified');
+      }
+    } catch {
+      setKycStatus(user.kyc_status ?? 'unverified');
+    }
+  };
+
+  useEffect(() => {
+    reconcileStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // Follow live changes: when the user row updates OR any of their
+  // kyc_submissions rows change, re-derive the real status.
+  useEffect(() => {
+    if (!user?.id) return;
+    const userChannel = supabase
+      .channel(`kyc-page-user-${user.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users', filter: `id=eq.${user.id}` }, () => {
+        reconcileStatus();
+      })
+      .subscribe();
+    const subChannel = supabase
+      .channel(`kyc-page-subs-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kyc_submissions', filter: `user_id=eq.${user.id}` }, () => {
+        reconcileStatus();
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(userChannel);
+      supabase.removeChannel(subChannel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const [form, setForm] = useState({
     full_name: user?.full_name || '',
@@ -186,7 +238,12 @@ export default function KYCPage() {
         id_back_url: backUrl,
         selfie_url: selfieUrl,
       });
+      // Force the local status to 'pending' immediately so the confirmation
+      // UI can never be defeated by a stale cached 'rejected' value, then
+      // reconcile from the DB and refresh the cached user session.
+      setKycStatus('pending');
       await refreshUser();
+      await reconcileStatus();
       setSubmitted(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';

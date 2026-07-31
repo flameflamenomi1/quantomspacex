@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ShieldCheck, Upload, CheckCircle, AlertCircle, Camera, CreditCard, FileText } from 'lucide-react';
-import { submitKyc } from '@/lib/db';
+import { submitKyc, getLatestKycSubmission } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import type { KycStatus } from '@/lib/db';
@@ -14,10 +14,42 @@ type IdType = 'passport' | 'national_id' | 'drivers_license';
 
 const STEPS = ['Personal Info', 'ID Document', 'Selfie', 'Review'];
 
-export default function KycForm({ kycStatus, onSubmitted }: Props) {
+export default function KycForm({ kycStatus: propKycStatus, onSubmitted }: Props) {
   const { user } = useAuth();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+
+  // Prefer the LATEST kyc_submissions row as source of truth over the parent's
+  // cached prop (which comes from users.kyc_status and can lag behind a fresh
+  // resubmission). This guarantees a user who has resubmitted always sees the
+  // real current review state instead of a stale 'rejected'.
+  const [effectiveStatus, setEffectiveStatus] = useState<KycStatus>(propKycStatus);
+
+  useEffect(() => { setEffectiveStatus(propKycStatus); }, [propKycStatus]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!user?.id) return;
+      try {
+        const latest = await getLatestKycSubmission(user.id);
+        if (cancelled) return;
+        if (latest) setEffectiveStatus(latest.status as KycStatus);
+      } catch { /* keep prop-derived status */ }
+    }
+    load();
+    if (!user?.id) return;
+    const ch = supabase
+      .channel(`kyc-form-subs-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kyc_submissions', filter: `user_id=eq.${user.id}` }, () => { load(); })
+      .subscribe();
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(ch);
+    };
+  }, [user?.id]);
+
+  const kycStatus: KycStatus = effectiveStatus;
   const [error, setError] = useState('');
 
   const [form, setForm] = useState({
@@ -85,6 +117,10 @@ export default function KycForm({ kycStatus, onSubmitted }: Props) {
         id_back_url: backUrl,
         selfie_url: selfieUrl,
       });
+      // Flip local state to 'pending' immediately so a lagging parent prop
+      // (still reading a stale 'rejected' from users.kyc_status) can't keep
+      // the form showing the rejection card.
+      setEffectiveStatus('pending');
       onSubmitted();
     } catch (e) {
       console.error('KYC submit error:', e);

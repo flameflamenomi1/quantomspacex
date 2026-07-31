@@ -270,30 +270,86 @@ export async function creditUserBalance(userId: string, amount: number) {
 }
 
 // ── KYC ──────────────────────────────────────────────
-export async function submitKyc(data: Omit<KycSubmission, 'id' | 'created_at' | 'updated_at' | 'users' | 'status'>) {
-  const { data: kyc, error } = await supabase.from('kyc_submissions').insert(data).select().single();
+// Fetch the latest kyc_submissions row for a user (the one that reflects their
+// current real state). Older rows are historical only.
+export async function getLatestKycSubmission(userId: string): Promise<KycSubmission | null> {
+  const { data, error } = await supabase
+    .from('kyc_submissions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
   if (error) throw error;
-  // Mark user kyc as pending
-  await supabase.from('users').update({ kyc_status: 'pending' }).eq('id', data.user_id);
+  return (data as KycSubmission | null) ?? null;
+}
+
+export async function submitKyc(data: Omit<KycSubmission, 'id' | 'created_at' | 'updated_at' | 'users' | 'status'>) {
+  // Always insert a brand-new submission in the 'pending' state. Explicitly
+  // setting status here means a stale client cache or an accidental extra
+  // field on `data` cannot carry a previous 'rejected'/'approved' value into
+  // the new row — the fresh submission ALWAYS starts pending and must be
+  // reviewed on its own merits.
+  const nowIso = new Date().toISOString();
+  const { data: kyc, error } = await supabase
+    .from('kyc_submissions')
+    .insert({ ...data, status: 'pending', updated_at: nowIso })
+    .select()
+    .single();
+  if (error) throw error;
+  // Reset the user's aggregate kyc_status to 'pending' so their dashboard and
+  // the admin user list immediately reflect that they are awaiting review
+  // again, regardless of any previous rejected/approved state.
+  const { error: userErr } = await supabase
+    .from('users')
+    .update({ kyc_status: 'pending' })
+    .eq('id', data.user_id);
+  if (userErr) throw userErr;
   return kyc as KycSubmission;
 }
 
+// Return only the LATEST submission per user, so the admin panel never shows
+// stale rejected/approved rows alongside a user's fresh resubmission — that
+// prevented review of resubmissions and let old rows be re-actioned, which
+// flipped users.kyc_status back to 'rejected'.
 export async function getKycSubmissions() {
   const { data, error } = await supabase
     .from('kyc_submissions')
     .select('*, users(full_name, email)')
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return data as KycSubmission[];
+  const rows = (data ?? []) as KycSubmission[];
+  const seen = new Set<string>();
+  const latestPerUser: KycSubmission[] = [];
+  for (const row of rows) {
+    if (seen.has(row.user_id)) continue;
+    seen.add(row.user_id);
+    latestPerUser.push(row);
+  }
+  return latestPerUser;
 }
 
 export async function updateKycStatus(id: string, userId: string, status: 'approved' | 'rejected', admin_note?: string) {
+  // Update the specific submission row.
   const { error } = await supabase
     .from('kyc_submissions')
     .update({ status, admin_note, updated_at: new Date().toISOString() })
     .eq('id', id);
   if (error) throw error;
-  await supabase.from('users').update({ kyc_status: status }).eq('id', userId);
+
+  // Only propagate to users.kyc_status if the submission we just actioned is
+  // still that user's LATEST submission. If the user has already resubmitted
+  // (i.e. a newer row exists), acting on an older row must not flip their
+  // aggregate status back — otherwise a stale admin click on an old rejected
+  // row silently pushes a freshly-resubmitted user back to 'rejected'.
+  const latest = await getLatestKycSubmission(userId);
+  if (!latest || latest.id === id) {
+    const { error: userErr } = await supabase
+      .from('users')
+      .update({ kyc_status: status })
+      .eq('id', userId);
+    if (userErr) throw userErr;
+  }
 }
 
 // ── Trades ──────────────────────────────────────────
