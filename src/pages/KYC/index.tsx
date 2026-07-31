@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   FileText,
   Clock,
-  XCircle,
   BadgeCheck,
 } from 'lucide-react';
 import { submitKyc, getLatestKycSubmission } from '@/lib/db';
@@ -74,8 +73,13 @@ function UploadZone({
   );
 }
 
-function StatusCard({ status }: { status: KycStatus }) {
-  const configs: Record<KycStatus, { icon: React.ReactNode; title: string; desc: string; color: string; bg: string }> = {
+// StatusCard renders the informational banner shown when the user's KYC is
+// either 'pending' or 'approved'. The 'rejected' state intentionally has NO
+// dedicated card — rejected users are shown the exact same blank submission
+// form as brand-new 'unverified' users, with no visible mention of the
+// prior rejection anywhere in the UI.
+function StatusCard({ status }: { status: 'pending' | 'approved' }) {
+  const configs: Record<'pending' | 'approved', { icon: React.ReactNode; title: string; desc: string; color: string; bg: string }> = {
     pending: {
       icon: <Clock className="w-8 h-8 text-yellow-400" />,
       title: 'Verification Under Review',
@@ -90,23 +94,8 @@ function StatusCard({ status }: { status: KycStatus }) {
       color: 'text-green-400',
       bg: 'bg-green-400/10 border-green-400/20',
     },
-    rejected: {
-      icon: <XCircle className="w-8 h-8 text-red-400" />,
-      title: 'Verification Rejected',
-      desc: 'Your submission was rejected. Please review the requirements below and resubmit with clearer documents.',
-      color: 'text-red-400',
-      bg: 'bg-red-400/10 border-red-400/20',
-    },
-    unverified: {
-      icon: <ShieldCheck className="w-8 h-8 text-brand-textMuted" />,
-      title: '',
-      desc: '',
-      color: '',
-      bg: '',
-    },
   };
   const c = configs[status];
-  if (status === 'unverified') return null;
   return (
     <div className={`rounded-2xl border p-5 flex items-start gap-4 ${c.bg}`}>
       {c.icon}
@@ -277,10 +266,13 @@ export default function KYCPage() {
 
       <section id="kyc-content" className="max-w-lg mx-auto px-4 py-6 space-y-6">
 
-        {/* Already submitted/approved/rejected */}
-        {(submitted || (kycStatus !== 'unverified' && kycStatus !== 'rejected')) && (
+        {/* Show a status card only for 'pending' and 'approved' users, or
+            immediately after a fresh submit. 'rejected' is intentionally
+            treated the same as 'unverified' — no card, no banner, no
+            mention of the prior rejection. */}
+        {(submitted || kycStatus === 'pending' || kycStatus === 'approved') && (
           <>
-            <StatusCard status={submitted ? 'pending' : kycStatus} />
+            <StatusCard status={submitted ? 'pending' : (kycStatus as 'pending' | 'approved')} />
             {(kycStatus === 'approved') && (
               <button onClick={() => navigate('/dashboard')} className="w-full py-3.5 rounded-xl font-bold bg-brand-success text-white hover:bg-red-700 transition-all text-sm">
                 Back to Dashboard
@@ -289,11 +281,11 @@ export default function KYCPage() {
           </>
         )}
 
-        {/* Show form for unverified or rejected */}
+        {/* Show the blank submission form for BOTH 'unverified' and
+            'rejected' users. A rejected user sees an identical form to a
+            brand-new user — no rejection status card is rendered above it. */}
         {!submitted && (kycStatus === 'unverified' || kycStatus === 'rejected') && (
           <>
-            {kycStatus === 'rejected' && <StatusCard status="rejected" />}
-
             {/* Why verify banner */}
             <div className="bg-brand-card border border-brand-border rounded-2xl p-4 flex items-start gap-3">
               <ShieldCheck className="w-5 h-5 text-brand-success shrink-0 mt-0.5" />

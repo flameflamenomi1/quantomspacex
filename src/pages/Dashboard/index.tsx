@@ -577,7 +577,10 @@ export default function DashboardPage() {
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>Verification</span>
             {kycStatus === 'pending' && <span className="w-2 h-2 bg-yellow-400 rounded-full" />}
-            {kycStatus === 'unverified' && <span className="w-2 h-2 bg-brand-danger rounded-full" />}
+            {/* 'rejected' is treated identically to 'unverified' in the UI:
+                same red dot, same blank verification form, no rejection
+                banner or 'Resubmit KYC' button anywhere. */}
+            {(kycStatus === 'unverified' || kycStatus === 'rejected') && <span className="w-2 h-2 bg-brand-danger rounded-full" />}
           </button>
         </div>
 

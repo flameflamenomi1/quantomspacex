@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
 import { ShieldCheck, Upload, CheckCircle, AlertCircle, Camera, CreditCard, FileText } from 'lucide-react';
+// NOTE: The 'rejected' KYC state intentionally has no dedicated UI here.
+// A user whose kyc_status is 'rejected' falls through to the same blank
+// submission form shown to an 'unverified' user (no rejection banner, no
+// 'Resubmit KYC' button). Only 'approved' and 'pending' still render their
+// own status cards below.
 import { submitKyc, getLatestKycSubmission } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -155,29 +160,13 @@ export default function KycForm({ kycStatus: propKycStatus, onSubmitted }: Props
     );
   }
 
-  if (kycStatus === 'rejected') {
-    return (
-      <div className="bg-brand-card border border-brand-border rounded-xl p-6">
-        <div className="flex items-center space-x-3 mb-4">
-          <div className="w-10 h-10 bg-brand-danger/10 border border-brand-danger/30 rounded-full flex items-center justify-center">
-            <AlertCircle className="w-5 h-5 text-brand-danger" />
-          </div>
-          <div>
-            <h2 className="font-semibold text-white">Verification Rejected</h2>
-            <p className="text-brand-textMuted text-xs">Please resubmit with valid documents.</p>
-          </div>
-        </div>
-        <button
-          onClick={() => setStep(0)}
-          className="w-full bg-brand-success text-brand-bg font-bold py-2.5 rounded-lg text-sm hover:bg-red-700 transition-colors"
-        >
-          Resubmit KYC
-        </button>
-      </div>
-    );
-  }
+  // 'rejected' is intentionally treated as 'unverified' from the UI's
+  // perspective — fall through to the blank submission form below with no
+  // rejection banner and no 'Resubmit KYC' button.
 
-  // Progress bar
+  // Fallthrough: 'unverified' AND 'rejected' both render the standard blank
+  // KYC submission form below — a rejected user sees exactly what a new,
+  // never-submitted user sees.
 
   return (
     <div className="bg-brand-card border border-brand-border rounded-xl overflow-hidden">
